@@ -1,5 +1,3 @@
-!pip install indian_names
-
 import asyncio
 import random
 from concurrent.futures import ThreadPoolExecutor
