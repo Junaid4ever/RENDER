@@ -8,21 +8,18 @@ from flask import Flask, request
 from playwright.async_api import async_playwright
 import indian_names
 
-# Install dependencies and Playwright
-def install_dependencies():
+# Function to install Playwright and Chromium dependencies
+def install_playwright_dependencies():
     try:
-        # Install Python dependencies
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
-        
-        # Install Playwright and browsers (Chromium)
+        # Install Playwright and Chromium browser
         subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
-        print("Dependencies and Playwright installed successfully!")
+        print("Playwright and Chromium installed successfully!")
     except subprocess.CalledProcessError as e:
-        print(f"Error installing dependencies: {e}")
+        print(f"Error installing Playwright dependencies: {e}")
         sys.exit(1)
 
-# Ensure dependencies are installed when the script is run
-install_dependencies()
+# Ensure Playwright dependencies are installed when the script is run
+install_playwright_dependencies()
 
 # Flask setup
 nest_asyncio.apply()
