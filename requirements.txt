@@ -1,5 +1,4 @@
-Flask
-gunicorn
+quart
+nest-asyncio
 playwright
-nest_asyncio
-indian_names
+gunicorn
