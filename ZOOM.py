@@ -1,17 +1,20 @@
-from quart import Quart, request, render_template, jsonify
+from flask import Flask, request, render_template, jsonify
 import asyncio
-from playwright.async_api import async_playwright
 import random
+from concurrent.futures import ThreadPoolExecutor
+from playwright.async_api import async_playwright
 import nest_asyncio
 import indian_names
+import os
 
 nest_asyncio.apply()
 
-app = Quart(__name__)
+app = Flask(__name__)
 
-# Hardcoded password for verifying
+# Hardcoded password for verification
 HARDCODED_PASSWORD = "Fly@1234"
 
+# Verify password function
 def verify_password(password):
     return password == HARDCODED_PASSWORD
 
@@ -59,57 +62,95 @@ async def join_meeting(browser, wait_time, meetingcode, passcode):
         except Exception:
             pass
 
-        await page.wait_for_selector('button.zm-btn.join-audio-by-voip__join-btn.zm-btn--primary.zm-btn__outline--white.zm-btn--lg', timeout=300000)
-        mic_button_locator = await page.query_selector('button.zm-btn.join-audio-by-voip__join-btn.zm-btn--primary.zm-btn__outline--white.zm-btn--lg')
-        if mic_button_locator:
-            await mic_button_locator.evaluate_handle('node => node.click()')
-            print(f"{user} successfully joined audio.")
-        
+        # Ensure microphone permissions are enabled
+        try:
+            for _ in range(5):
+                await page.evaluate('() => { navigator.mediaDevices.getUserMedia({ audio: true, video: true }); }')
+                await asyncio.sleep(2)
+            print(f"{user} microphone permissions enabled.")
+        except Exception as e:
+            print(f"{user} failed to enable microphone permissions. {e}")
+
+        # Try to click the 'join audio by computer' button once
+        retry_count = 5
+        while retry_count > 0:
+            try:
+                await page.wait_for_selector('button.zm-btn.join-audio-by-voip__join-btn.zm-btn--primary.zm-btn__outline--white.zm-btn--lg', timeout=300000)
+                mic_button_locator = await page.query_selector('button.zm-btn.join-audio-by-voip__join-btn.zm-btn--primary.zm-btn__outline--white.zm-btn--lg')
+                if mic_button_locator:
+                    await mic_button_locator.evaluate_handle('node => node.click()')
+                    print(f"{user} successfully joined audio.")
+                    break
+                else:
+                    raise Exception("Join audio button not found.")
+            except Exception as e:
+                print(f"Attempt {5 - retry_count + 1}: {user} failed to join audio. Retrying... {e}")
+                retry_count -= 1
+                await asyncio.sleep(2)
+
+        if retry_count == 0:
+            print(f"{user} failed to join audio after multiple attempts.")
+
         print(f"{user} will remain in the meeting for {wait_time} seconds ...")
-        await asyncio.sleep(wait_time)
+        try:
+            await asyncio.sleep(wait_time)
+        except asyncio.CancelledError:
+            print(f"{user} has been interrupted and will exit.")
     except Exception as e:
         print(f"An error occurred: {e}")
 
     await context.close()
 
+async def main():
+    # Prompt user for input
+    number = int(input("Enter number of users: "))
+    meetingcode = input("Enter the meeting ID: ")
+    passcode = input("Enter the meeting password: ")
+    wait_time = 7200  # Fixed wait time in seconds (you can prompt the user for this too if needed)
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[ 
+                '--no-sandbox', 
+                '--disable-dev-shm-usage', 
+                '--use-fake-ui-for-media-stream', 
+                '--use-fake-device-for-media-stream', 
+                f'--disk-cache-size={random.randint(200, 5000)}000000', 
+                f'--max-active-views={random.randint(5, 1000)}'  
+            ]
+        )
+
+        tasks = []
+        for _ in range(number):
+            task = asyncio.create_task(join_meeting(browser, wait_time, meetingcode, passcode))
+            tasks.append(task)
+
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except KeyboardInterrupt:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        await browser.close()
+
 @app.route("/", methods=["GET", "POST"])
-async def index():
+def index():
     if request.method == "POST":
         # Get form data
-        password = await request.form.get("password")
-        meetingcode = await request.form.get("meetingcode")
-        passcode = await request.form.get("passcode")
-        number = int(await request.form.get("number"))
-        wait_time = 7200  # Fixed wait time in seconds
+        password = request.form.get("password")
+        meetingcode = request.form.get("meetingcode")
+        passcode = request.form.get("passcode")
+        number = int(request.form.get("number"))
+        wait_time = 7200  # Fixed wait time in seconds (you can prompt the user for this too if needed)
 
         # Verify password
         if not verify_password(password):
             return "Invalid Password. Please try again."
 
         # Run the async script
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--use-fake-ui-for-media-stream',
-                    '--use-fake-device-for-media-stream'
-                ]
-            )
-
-            tasks = []
-            for _ in range(number):
-                task = asyncio.create_task(join_meeting(browser, wait_time, meetingcode, passcode))
-                tasks.append(task)
-
-            try:
-                await asyncio.gather(*tasks, return_exceptions=True)
-            except KeyboardInterrupt:
-                for task in tasks:
-                    task.cancel()
-
-            await browser.close()
+        asyncio.run(main())
 
         return f"Meeting joined successfully with {number} users!"
 
@@ -129,4 +170,11 @@ async def index():
     """
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Get password from user
+    password = input("Enter the script password: ")
+
+    if verify_password(password):
+        port = int(os.environ.get("PORT", 5000))  # Get the correct port for deployment
+        app.run(host='0.0.0.0', port=port, debug=True)
+    else:
+        print("Wrong password. GET LOST.")
