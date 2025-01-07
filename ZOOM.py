@@ -1,13 +1,31 @@
-from flask import Flask, request
+import subprocess
+import sys
+import os
 import asyncio
 import random
-from playwright.async_api import async_playwright
 import nest_asyncio
+from flask import Flask, request
+from playwright.async_api import async_playwright
 import indian_names
-import os
 
+# Install dependencies and Playwright
+def install_dependencies():
+    try:
+        # Install Python dependencies
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+        
+        # Install Playwright and browsers (Chromium)
+        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+        print("Dependencies and Playwright installed successfully!")
+    except subprocess.CalledProcessError as e:
+        print(f"Error installing dependencies: {e}")
+        sys.exit(1)
+
+# Ensure dependencies are installed when the script is run
+install_dependencies()
+
+# Flask setup
 nest_asyncio.apply()
-
 app = Flask(__name__)
 
 # Hardcoded password for verification
@@ -23,10 +41,11 @@ def generate_unique_user():
     last_name = indian_names.get_last_name()
     return f"{first_name} {last_name}"
 
+# Meeting joining logic using Playwright
 async def join_meeting(browser, wait_time, meetingcode, passcode):
     user = generate_unique_user()
     print(f"{user} attempting to join with Chromium.")
-
+    
     context = await browser.new_context()
     page = await context.new_page()
 
@@ -69,6 +88,7 @@ async def join_meeting(browser, wait_time, meetingcode, passcode):
 
     await context.close()
 
+# Flask route for receiving form input
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
@@ -103,6 +123,7 @@ def index():
     </form>
     """
 
+# Function to start multiple meetings
 async def start_meetings(number, meetingcode, passcode, wait_time):
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -123,6 +144,7 @@ async def start_meetings(number, meetingcode, passcode, wait_time):
         await asyncio.gather(*tasks)
         await browser.close()
 
+# Run the Flask app
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # Get the port from environment
     app.run(host="0.0.0.0", port=port, debug=True)
