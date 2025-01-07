@@ -1,3 +1,4 @@
+websockets
 quart
 nest-asyncio
 playwright
