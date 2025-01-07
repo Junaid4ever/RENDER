@@ -1,4 +1,5 @@
 Flask
+gunicorn
 playwright
 nest_asyncio
 indian_names
