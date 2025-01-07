@@ -11,12 +11,14 @@ import indian_names
 # Function to install dependencies
 def install_dependencies():
     try:
-        # Install Playwright without its dependencies
+        # Install playwright without its dependencies
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'playwright==1.23.1', '--no-deps'])
-        # Install Playwright dependencies (chromium)
+        # Install playwright dependencies (chromium)
         subprocess.check_call([sys.executable, '-m', 'playwright', 'install'])
+        # Install specific version of pyee to avoid compatibility issues
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyee==8.2.2'])
         # Install other dependencies
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'indian_names', 'pyee'])
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'indian_names'])
         print("Dependencies installed successfully!")
     except subprocess.CalledProcessError as e:
         print("Error installing dependencies:", e)
