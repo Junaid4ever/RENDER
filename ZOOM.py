@@ -1,11 +1,11 @@
-from flask import Flask, request, render_template, jsonify
+from quart import Quart, request, render_template, jsonify
 import asyncio
 from playwright.async_api import async_playwright
 import nest_asyncio
 
 nest_asyncio.apply()
 
-app = Flask(__name__)
+app = Quart(__name__)
 
 # Hardcoded password for verification
 HARDCODED_PASSWORD = "Fly@1234"
@@ -16,24 +16,33 @@ def verify_password(password):
 async def join_meeting(meetingcode, passcode, number):
     # Simulated meeting joining logic
     print(f"Joining meeting {meetingcode} with passcode {passcode} for {number} users.")
-    await asyncio.sleep(2)  # Simulate async task
-    return "Success"
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context()
+        page = await context.new_page()
+        try:
+            await page.goto(f"http://app.zoom.us/wc/join/{meetingcode}")
+            # Add any other Zoom interaction here
+            print(f"Successfully joined the Zoom meeting {meetingcode}")
+        except Exception as e:
+            print(f"Error while joining the meeting: {e}")
+        await browser.close()
 
 @app.route("/", methods=["GET", "POST"])
-def index():
+async def index():
     if request.method == "POST":
         # Get form data
-        password = request.form.get("password")
-        meetingcode = request.form.get("meetingcode")
-        passcode = request.form.get("passcode")
-        number = int(request.form.get("number"))
+        password = await request.form.get("password")
+        meetingcode = await request.form.get("meetingcode")
+        passcode = await request.form.get("passcode")
+        number = int(await request.form.get("number"))
 
         # Verify password
         if not verify_password(password):
             return "Invalid Password. Please try again."
 
         # Run the async script
-        asyncio.run(join_meeting(meetingcode, passcode, number))
+        await join_meeting(meetingcode, passcode, number)
 
         return f"Meeting joined successfully with {number} users!"
 
