@@ -1,4 +1,4 @@
 quart
 nest-asyncio
 playwright
-gunicorn
+indian_names
