@@ -1,42 +1,42 @@
 import subprocess
 import sys
-import os
 import asyncio
 import random
-import nest_asyncio
 from flask import Flask, request
 from playwright.async_api import async_playwright
+import nest_asyncio
+import os
 import indian_names
 
-# Function to install dependencies
-def install_dependencies():
-    try:
-        # Install playwright without its dependencies
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'playwright==1.23.1', '--no-deps'])
-        # Install playwright dependencies (chromium)
-        subprocess.check_call([sys.executable, '-m', 'playwright', 'install'])
-        # Install specific version of pyee to avoid compatibility issues
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyee==8.2.2'])
-        # Install other dependencies
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'indian_names'])
-        print("Dependencies installed successfully!")
-    except subprocess.CalledProcessError as e:
-        print("Error installing dependencies:", e)
-        sys.exit(1)
-
-# Install dependencies before running the script
-install_dependencies()
-
-# Flask setup
 nest_asyncio.apply()
+
 app = Flask(__name__)
 
 # Hardcoded password for verification
 HARDCODED_PASSWORD = "Fly@1234"
 
+# Store member names to display on the webpage
+member_names = []
+
+# Dependency installation
+def install_dependencies():
+    try:
+        # Install playwright without its dependencies
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'playwright==1.23.1', '--no-deps'])
+        # Install playwright dependencies
+        subprocess.check_call([sys.executable, '-m', 'playwright', 'install'])
+        # Install other dependencies
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'indian_names', 'pyee'])
+        print("Dependencies installed successfully!")
+    except subprocess.CalledProcessError as e:
+        print("Error installing dependencies:", e)
+        sys.exit(1)
+
+
 # Verify password function
 def verify_password(password):
     return password == HARDCODED_PASSWORD
+
 
 # Generate a unique user name
 def generate_unique_user():
@@ -44,11 +44,12 @@ def generate_unique_user():
     last_name = indian_names.get_last_name()
     return f"{first_name} {last_name}"
 
-# Meeting joining logic using Playwright
+
 async def join_meeting(browser, wait_time, meetingcode, passcode):
     user = generate_unique_user()
+    member_names.append(user)  # Add user to member names list
     print(f"{user} attempting to join with Chromium.")
-    
+
     context = await browser.new_context()
     page = await context.new_page()
 
@@ -91,42 +92,136 @@ async def join_meeting(browser, wait_time, meetingcode, passcode):
 
     await context.close()
 
-# Flask route for receiving form input
+
 @app.route("/", methods=["GET", "POST"])
 def index():
+    global member_names
+    member_names = []  # Reset member names list for each new session
+
     if request.method == "POST":
-        # Get form data
         password = request.form.get("password")
         meetingcode = request.form.get("meetingcode")
         passcode = request.form.get("passcode")
         number = int(request.form.get("number"))
-        wait_time = 7200  # Fixed wait time in seconds (you can modify this as needed)
 
-        # Verify password
+        print(f"Received form data: Password={password}, MeetingCode={meetingcode}, Passcode={passcode}, Number={number}")
+
         if not verify_password(password):
-            return "Invalid Password. Please try again."
+            return """
+            <div style="text-align: center; font-family: Arial, sans-serif; color: red;">
+                <h2>Invalid Password!</h2>
+                <a href="/" style="color: #007bff; text-decoration: none;">Go Back</a>
+            </div>
+            """
 
-        # Run the async script
-        asyncio.run(start_meetings(number, meetingcode, passcode, wait_time))
+        asyncio.run(start_meetings(number, meetingcode, passcode, 7200))
 
-        return f"Meeting joined successfully with {number} users!"
+        return f"""
+        <div style="text-align: center; font-family: Arial, sans-serif; color: green;">
+            <h2>Meeting joined successfully!</h2>
+            <p>Members added to the meeting:</p>
+            <ul>
+                {''.join(f'<li>{name}</li>' for name in member_names)}
+            </ul>
+            <a href="/" style="color: #007bff; text-decoration: none;">Go Back</a>
+        </div>
+        """
 
-    # Render HTML form
     return """
-    <form method="post">
-        <label for="password">Enter Password:</label>
-        <input type="password" id="password" name="password" required><br><br>
-        <label for="meetingcode">Meeting ID:</label>
-        <input type="text" id="meetingcode" name="meetingcode" required><br><br>
-        <label for="passcode">Meeting Passcode:</label>
-        <input type="text" id="passcode" name="passcode" required><br><br>
-        <label for="number">Number of Users:</label>
-        <input type="number" id="number" name="number" min="1" required><br><br>
-        <button type="submit">Submit</button>
-    </form>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Zoom Meeting Automation</title>
+        <style>
+            body {
+                font-family: 'Arial', sans-serif;
+                background: linear-gradient(to right, #6a11cb, #2575fc);
+                color: #fff;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+            }
+            .form-container {
+                background: rgba(0, 0, 0, 0.7);
+                padding: 20px;
+                border-radius: 10px;
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+                width: 400px;
+                text-align: center;
+            }
+            .form-container h1 {
+                margin-bottom: 20px;
+                color: #00d9ff;
+            }
+            .form-container label {
+                display: block;
+                text-align: left;
+                margin-bottom: 5px;
+                font-weight: bold;
+            }
+            .form-container input {
+                width: 100%;
+                padding: 10px;
+                margin-bottom: 15px;
+                border: none;
+                border-radius: 5px;
+                box-sizing: border-box;
+            }
+            .form-container input[type="password"],
+            .form-container input[type="text"],
+            .form-container input[type="number"] {
+                background: #f3f3f3;
+                color: #333;
+            }
+            .form-container button {
+                width: 100%;
+                padding: 10px;
+                background: #00d9ff;
+                border: none;
+                border-radius: 5px;
+                color: #333;
+                font-weight: bold;
+                cursor: pointer;
+            }
+            .form-container button:hover {
+                background: #00c2e0;
+            }
+            a {
+                color: #00d9ff;
+                text-decoration: none;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="form-container">
+            <h1>Zoom Meeting Automation</h1>
+            <form method="post">
+                <label for="password">Enter Password:</label>
+                <input type="password" id="password" name="password" required>
+                
+                <label for="meetingcode">Meeting ID:</label>
+                <input type="text" id="meetingcode" name="meetingcode" required>
+                
+                <label for="passcode">Meeting Passcode:</label>
+                <input type="text" id="passcode" name="passcode" required>
+                
+                <label for="number">Number of Users:</label>
+                <input type="number" id="number" name="number" min="1" required>
+                
+                <button type="submit">Submit</button>
+            </form>
+        </div>
+    </body>
+    </html>
     """
 
-# Function to start multiple meetings
+
 async def start_meetings(number, meetingcode, passcode, wait_time):
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -147,7 +242,8 @@ async def start_meetings(number, meetingcode, passcode, wait_time):
         await asyncio.gather(*tasks)
         await browser.close()
 
-# Run the Flask app
+
 if __name__ == "__main__":
+    install_dependencies()  # Install dependencies
     port = int(os.environ.get("PORT", 5000))  # Get the port from environment
     app.run(host="0.0.0.0", port=port, debug=True)
