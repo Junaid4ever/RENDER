@@ -10,9 +10,12 @@ app = Flask(__name__)
 # Install dependencies
 def install_dependencies():
     try:
+        # Install playwright without its dependencies
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'playwright==1.23.1', '--no-deps'])
+        # Install playwright dependencies
         subprocess.check_call([sys.executable, '-m', 'playwright', 'install'])
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyee'])
+        # Install compatible pyee version and other dependencies
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyee==8.2.2'])
         print("Dependencies installed successfully!")
     except subprocess.CalledProcessError as e:
         print("Error installing dependencies:", e)
