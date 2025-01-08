@@ -25,8 +25,10 @@ def install_dependencies():
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'playwright==1.23.1', '--no-deps'])
         # Install playwright dependencies
         subprocess.check_call([sys.executable, '-m', 'playwright', 'install'])
-        # Install other dependencies
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'indian_names', 'pyee'])
+        # Install specific compatible version of pyee
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyee==9.0.4'])
+        # Install indian_names
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'indian_names'])
         print("Dependencies installed successfully!")
     except subprocess.CalledProcessError as e:
         print("Error installing dependencies:", e)
