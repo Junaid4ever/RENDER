@@ -1,172 +1,157 @@
-from flask import Flask, render_template_string, request
-import asyncio
-from playwright.async_api import async_playwright
 import subprocess
 import sys
-import threading
+from flask import Flask, request, jsonify
+import asyncio
+import random
+from playwright.async_api import async_playwright
+import nest_asyncio
+import os
+
+nest_asyncio.apply()
 
 app = Flask(__name__)
 
-# Install dependencies
+# Function to install dependencies
 def install_dependencies():
     try:
         # Install playwright without its dependencies
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'playwright==1.23.1', '--no-deps'])
         # Install playwright dependencies
         subprocess.check_call([sys.executable, '-m', 'playwright', 'install'])
-        # Install compatible pyee version and other dependencies
+        # Install compatible version of pyee
         subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pyee==8.2.2'])
         print("Dependencies installed successfully!")
     except subprocess.CalledProcessError as e:
         print("Error installing dependencies:", e)
         sys.exit(1)
 
+# Install dependencies before starting the app
 install_dependencies()
 
-# HTML Template with improved styling
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom Meeting Automation</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f9;
-            margin: 0;
-            padding: 0;
-        }
-        .container {
-            max-width: 800px;
-            margin: 50px auto;
-            background: #ffffff;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            padding: 20px;
-        }
-        h1 {
-            text-align: center;
-            color: #333333;
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #555555;
-        }
-        input[type="text"], input[type="number"], input[type="password"] {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 20px;
-            border: 1px solid #dddddd;
-            border-radius: 4px;
-        }
-        button {
-            display: block;
-            width: 100%;
-            padding: 10px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background: #45a049;
-        }
-        .members {
-            margin-top: 20px;
-            padding: 10px;
-            background: #e8f5e9;
-            border-radius: 4px;
-        }
-        .error {
-            color: red;
-            margin-top: 20px;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Zoom Meeting Automation</h1>
-        <form method="POST" action="/">
-            <label for="meetingcode">Meeting Code:</label>
-            <input type="text" id="meetingcode" name="meetingcode" required>
-            <label for="passcode">Passcode:</label>
-            <input type="password" id="passcode" name="passcode" required>
-            <label for="number">Number of Members:</label>
-            <input type="number" id="number" name="number" required>
-            <label for="waittime">Wait Time (seconds):</label>
-            <input type="number" id="waittime" name="waittime" required>
-            <button type="submit">Start Automation</button>
-        </form>
-        <div class="members">
-            <h3>Members Added:</h3>
-            <ul id="member-list">
-                {% for member in members %}
-                <li>{{ member }}</li>
-                {% endfor %}
-            </ul>
-        </div>
-    </div>
-</body>
-</html>
-"""
+# Hardcoded password for verification (if needed, can be modified dynamically)
+HARDCODED_PASSWORD = "Fly@1234"
 
-# Flask Route
+# Generate unique user names
+def generate_unique_user():
+    first_names = ["John", "Jane", "Alice", "Bob", "Chris"]
+    last_names = ["Smith", "Doe", "Brown", "Johnson", "Lee"]
+    return f"{random.choice(first_names)} {random.choice(last_names)}"
+
+# Dynamic list to store joined members
+joined_members = []
+
+# Asynchronous function to join a meeting
+async def join_meeting(browser, meeting_id, passcode, wait_time, member_name):
+    try:
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        # Navigate to Zoom meeting join page
+        print(f"{member_name} is attempting to join meeting {meeting_id}...")
+        await page.goto(f'https://zoom.us/wc/join/{meeting_id}', timeout=60000)
+
+        # Fill in the name and passcode, then join the meeting
+        await page.fill('input[name="name"]', member_name)
+        if passcode:
+            await page.fill('input[name="password"]', passcode)
+        await page.click('button[type="submit"]')
+
+        # Wait for the meeting to stabilize
+        await asyncio.sleep(wait_time)
+
+        # Close context after waiting
+        print(f"{member_name} stayed in the meeting for {wait_time} seconds.")
+        joined_members.append(member_name)
+        await context.close()
+
+    except Exception as e:
+        print(f"Error for {member_name}: {e}")
+
+# Route for the main page
 @app.route("/", methods=["GET", "POST"])
 def index():
-    members = []
-    error_message = ""
+    global joined_members
     if request.method == "POST":
-        meetingcode = request.form["meetingcode"]
-        passcode = request.form["passcode"]
-        number = int(request.form["number"])
-        wait_time = int(request.form["waittime"])
+        # Get form data
+        meeting_id = request.form.get("meeting_id")
+        passcode = request.form.get("passcode")
+        num_members = int(request.form.get("num_members"))
+        wait_time = int(request.form.get("wait_time", 120))  # Wait time in seconds
 
-        try:
-            # Run automation in a background thread
-            threading.Thread(target=lambda: asyncio.run(start_meetings(number, meetingcode, passcode, wait_time, members))).start()
-        except Exception as e:
-            error_message = f"Error: {str(e)}"
+        if not meeting_id or num_members < 1:
+            return "Invalid meeting details. Please check your inputs."
 
-    return render_template_string(HTML_TEMPLATE, members=members, error_message=error_message)
+        joined_members = []  # Reset the members list
 
-# Generate unique member name
-def generate_unique_user():
-    from random import randint
-    return f"User_{randint(1000, 9999)}"
+        # Start the meeting join automation
+        asyncio.run(start_meetings(meeting_id, passcode, num_members, wait_time))
+        return jsonify({"status": "success", "members_joined": joined_members})
 
-# Playwright Automation
-async def start_meetings(number, meetingcode, passcode, wait_time, members):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
-        tasks = [join_meeting(browser, meetingcode, passcode, wait_time, members) for _ in range(number)]
+    # Render HTML Form
+    return """
+    <html>
+        <head>
+            <title>Zoom Meeting Automation</title>
+            <style>
+                body { font-family: Arial, sans-serif; background-color: #f4f4f9; color: #333; padding: 20px; }
+                h1 { color: #4CAF50; }
+                form { background-color: #fff; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+                label { display: block; margin: 10px 0 5px; }
+                input, button { padding: 10px; margin: 10px 0; width: 100%; }
+                button { background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+                button:hover { background-color: #45a049; }
+                .members { margin-top: 20px; padding: 10px; background-color: #e7f3e7; border-left: 6px solid #4CAF50; }
+            </style>
+        </head>
+        <body>
+            <h1>Zoom Meeting Automation</h1>
+            <form method="post">
+                <label for="meeting_id">Meeting ID:</label>
+                <input type="text" id="meeting_id" name="meeting_id" required>
+                <label for="passcode">Meeting Passcode:</label>
+                <input type="text" id="passcode" name="passcode">
+                <label for="num_members">Number of Members:</label>
+                <input type="number" id="num_members" name="num_members" required min="1">
+                <label for="wait_time">Wait Time (seconds):</label>
+                <input type="number" id="wait_time" name="wait_time" value="120">
+                <button type="submit">Start Automation</button>
+            </form>
+            <div class="members">
+                <h2>Joined Members:</h2>
+                <ul id="members_list"></ul>
+            </div>
+            <script>
+                setInterval(async function() {
+                    const response = await fetch('/get_members');
+                    const data = await response.json();
+                    const membersList = document.getElementById('members_list');
+                    membersList.innerHTML = '';
+                    data.members.forEach(member => {
+                        const li = document.createElement('li');
+                        li.textContent = member;
+                        membersList.appendChild(li);
+                    });
+                }, 5000);  // Refresh every 5 seconds
+            </script>
+        </body>
+    </html>
+    """
+
+# Asynchronous function to start meetings
+async def start_meetings(meeting_id, passcode, num_members, wait_time):
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+        tasks = []
+        for i in range(num_members):
+            member_name = generate_unique_user()
+            tasks.append(join_meeting(browser, meeting_id, passcode, wait_time, member_name))
         await asyncio.gather(*tasks)
         await browser.close()
 
-async def join_meeting(browser, meetingcode, passcode, wait_time, members):
-    user = generate_unique_user()
-    members.append(user)  # Add to member list for display
-    context = await browser.new_context()
-    page = await context.new_page()
+# Route to get the list of joined members
+@app.route("/get_members")
+def get_members():
+    return jsonify({"members": joined_members})
 
-    try:
-        await page.goto(f"https://zoom.us/wc/join/{meetingcode}")
-        await page.fill("input[type='text']", user)
-        await page.fill("input[type='password']", passcode)
-        await page.click("button.preview-join-button")
-        await asyncio.sleep(wait_time)
-    except Exception as e:
-        print(f"Error for {user}: {e}")
-    finally:
-        await context.close()
-
-# Run Flask App
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
